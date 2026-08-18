@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Quran book / Crescent golden emblem -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M54,28 C42,28 32,36 30,48 C30,49 31,50 32,50 C33,50 34,49 34,48 C36,38 44,32 54,32 C64,32 72,38 74,48 C74,49 75,50 76,50 C77,50 78,49 78,48 C76,36 66,28 54,28 Z" />
+    <path
+        android:fillColor="#2B5742"
+        android:pathData="M38,46 L54,54 L70,46 L70,72 L54,80 L38,72 Z" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M53,55 L53,79 L55,79 L55,55 Z" />
+</vector>
