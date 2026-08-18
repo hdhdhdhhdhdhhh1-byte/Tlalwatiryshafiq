@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary: #1687C7;
+    --primary-sky: #55BFEA;
+    --primary-deep: #145273;
+    --light-sky: #E7F7FD;
+    --gold: #F2C96B;
+    --gold-light: #FEF9EB;
+    --background: #F6FBFF;
+    --surface: #FFFFFF;
+    --text-main: #193B4D;
+    --text-muted: #6C8795;
+    --border: #D8E8F2;
+  }
+
+  body {
+    font-family: 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--background);
+    color: var(--text-main);
+  }
+}
+
+.font-amiri {
+  font-family: 'Amiri', serif;
+}
+
+.font-tajawal {
+  font-family: 'Tajawal', sans-serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #EBF4FA;
+}
+::-webkit-scrollbar-thumb {
+  background: #B6D7E8;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1687C7;
+}
+
+/* Ripple and subtle animations */
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.015); }
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 3s ease-in-out infinite;
+}
+
+@keyframes waveBar {
+  0%, 100% { height: 6px; }
+  50% { height: 26px; }
+}
+
+.wave-bar-1 { animation: waveBar 1.2s ease-in-out infinite; }
+.wave-bar-2 { animation: waveBar 0.9s ease-in-out infinite 0.2s; }
+.wave-bar-3 { animation: waveBar 1.4s ease-in-out infinite 0.4s; }
+.wave-bar-4 { animation: waveBar 1.1s ease-in-out infinite 0.1s; }
+.wave-bar-5 { animation: waveBar 0.8s ease-in-out infinite 0.3s; }
+
+/* Rotating Glowing Border & Shimmer Effects */
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 8px rgba(85, 191, 234, 0.4)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 16px rgba(242, 201, 107, 0.7)); }
+}
+
+@keyframes floatPetal {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+  20% { opacity: 0.8; }
+  80% { opacity: 0.8; }
+  100% { transform: translateY(-30px) rotate(45deg); opacity: 0; }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 8s linear infinite;
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+.animate-float-petal {
+  animation: floatPetal 4s ease-in-out infinite;
+}

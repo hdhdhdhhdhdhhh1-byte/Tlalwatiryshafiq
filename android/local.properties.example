@@ -1,0 +1,5 @@
+## Supabase Configuration for Tilawatak Android
+## Copy this file to local.properties and add your public anon key.
+## NEVER put service_role keys or admin passwords in this file!
+SUPABASE_URL=https://ixkganrxtkywypvqkqkn.supabase.co
+SUPABASE_ANON_KEY=your_public_anon_key_here
