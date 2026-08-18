@@ -159,13 +159,23 @@ export function normalizeAudioUrl(record?: {
       trimmedPath.startsWith('blob:') ||
       trimmedPath.startsWith('data:')
     ) {
+      // NEVER allow /object/public/submission-audio/
+      if (trimmedPath.includes('/storage/v1/object/public/submission-audio/')) {
+        return '';
+      }
       if (isValidAudioUrl(trimmedPath)) {
         return trimmedPath;
       }
     } else {
-      // 1b. Relative storage path (e.g. 'submission-audio/sub_123.mp3' or 'recitation-audio/rec_123.mp3' or 'sub_123.mp3')
+      // 1b. Relative storage path (e.g. 'recitation-audio/rec_123.mp3' or 'submission-audio/sub_123.mp3')
       const cleanPath = trimmedPath.startsWith('/') ? trimmedPath.slice(1) : trimmedPath;
-      const parts = cleanPath.split('/');
+      const parts = cleanPath.split('/').filter(Boolean);
+
+      // submission-audio is private: DO NOT construct a public URL (requires Signed URL via async getPlayableAudioUrl)
+      if (parts[0] === 'submission-audio' || cleanPath.startsWith('sub_')) {
+        return '';
+      }
+
       let storageUrl = '';
       if (parts.length >= 2) {
         storageUrl = `${STORAGE_BASE_URL}/object/public/${parts[0]}/${parts.slice(1).join('/')}`;
@@ -182,18 +192,24 @@ export function normalizeAudioUrl(record?: {
   // 2. Second Priority: Check external audio URL
   const external = record.external_audio_url || record.externalAudioUrl;
   if (external && typeof external === 'string' && external.trim()) {
-    const directExt = transformGoogleDriveAudioUrl(external.trim());
-    if (isValidAudioUrl(directExt)) {
-      return directExt;
+    const trimmedExt = external.trim();
+    if (!trimmedExt.includes('/storage/v1/object/public/submission-audio/')) {
+      const directExt = transformGoogleDriveAudioUrl(trimmedExt);
+      if (isValidAudioUrl(directExt)) {
+        return directExt;
+      }
     }
   }
 
   // 3. Third Priority: Check audio_url direct field
   const directAudioUrl = record.audio_url || record.audioUrl;
   if (directAudioUrl && typeof directAudioUrl === 'string' && directAudioUrl.trim()) {
-    const directExt = transformGoogleDriveAudioUrl(directAudioUrl.trim());
-    if (isValidAudioUrl(directExt)) {
-      return directExt;
+    const trimmedDirect = directAudioUrl.trim();
+    if (!trimmedDirect.includes('/storage/v1/object/public/submission-audio/')) {
+      const directExt = transformGoogleDriveAudioUrl(trimmedDirect);
+      if (isValidAudioUrl(directExt)) {
+        return directExt;
+      }
     }
   }
 

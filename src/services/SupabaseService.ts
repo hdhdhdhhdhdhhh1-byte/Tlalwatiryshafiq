@@ -39,14 +39,106 @@ export class SupabaseService {
     if (!storagePath || typeof storagePath !== 'string') return '';
     const trimmed = storagePath.trim();
     if (!trimmed) return '';
+    if (trimmed.includes('/storage/v1/object/public/submission-audio/') || trimmed.includes('/storage/v1/object/public/submission-images/')) {
+      return '';
+    }
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
       return trimmed;
     }
     const clean = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
     if (clean.includes('/')) {
+      const parts = clean.split('/').filter(Boolean);
+      // submission-audio and submission-images are PRIVATE. NEVER construct public URLs for them!
+      if (parts[0] === 'submission-audio' || parts[0] === 'submission-images') {
+        return '';
+      }
       return `${SUPABASE_CONFIG.storageBaseUrl}/object/public/${clean}`;
     }
+    if (clean.startsWith('sub_') || defaultBucket === 'submission-audio' || defaultBucket === 'submission-images') {
+      return '';
+    }
     return `${SUPABASE_CONFIG.storageBaseUrl}/object/public/${defaultBucket}/${clean}`;
+  }
+
+  /**
+   * Safe parser for storage path that handles all path variations:
+   * A: "sub_123.mp3" => bucket: "submission-audio", path: "sub_123.mp3"
+   * B: "submission-audio/sub_123.mp3" => bucket: "submission-audio", path: "sub_123.mp3"
+   * C: "https://.../storage/v1/object/public/submission-audio/sub_123.mp3" => bucket: "submission-audio", path: "sub_123.mp3"
+   * D: "/storage/v1/object/submission-audio/sub_123.mp3" => bucket: "submission-audio", path: "sub_123.mp3"
+   */
+  static parseStoragePath(input?: string | null): { bucket: string; path: string } | null {
+    if (!input || typeof input !== 'string') return null;
+    let str = input.trim();
+    if (!str) return null;
+
+    // Handle full or relative storage endpoint URLs
+    if (str.includes('/storage/v1/object/')) {
+      const withoutQuery = str.split('?')[0];
+      const afterObject = withoutQuery.split('/storage/v1/object/')[1];
+      if (afterObject) {
+        const segments = afterObject.split('/').filter(Boolean);
+        if (segments[0] === 'public' || segments[0] === 'sign') {
+          segments.shift(); // remove 'public' or 'sign'
+        }
+        if (segments.length >= 2) {
+          return {
+            bucket: segments[0],
+            path: segments.slice(1).join('/')
+          };
+        } else if (segments.length === 1) {
+          return {
+            bucket: segments[0].startsWith('sub_') ? 'submission-audio' : 'recitation-audio',
+            path: segments[0]
+          };
+        }
+      }
+    }
+
+    // Strip leading slashes
+    const clean = str.startsWith('/') ? str.slice(1) : str;
+    const parts = clean.split('/').filter(Boolean);
+
+    const KNOWN_BUCKETS = [
+      'submission-audio',
+      'recitation-audio',
+      'profile-images',
+      'recitation-covers',
+      'submission-images',
+      'announcement-images',
+      'competition-images'
+    ];
+
+    if (parts.length >= 2 && KNOWN_BUCKETS.includes(parts[0])) {
+      const bucket = parts[0];
+      let rest = parts.slice(1);
+      while (rest.length > 1 && rest[0] === bucket) {
+        rest = rest.slice(1);
+      }
+      return {
+        bucket,
+        path: rest.join('/')
+      };
+    }
+
+    if (clean.startsWith('sub_')) {
+      return {
+        bucket: 'submission-audio',
+        path: clean
+      };
+    }
+
+    if (parts.length === 1) {
+      return {
+        bucket: 'recitation-audio',
+        path: clean
+      };
+    }
+
+    return {
+      bucket: parts[0],
+      path: parts.slice(1).join('/')
+    };
   }
 
   /**
@@ -61,32 +153,18 @@ export class SupabaseService {
     const trimmed = storagePath.trim();
     if (!trimmed) return null;
 
-    if (
-      trimmed.startsWith('http://') ||
-      trimmed.startsWith('https://') ||
-      trimmed.startsWith('blob:') ||
-      trimmed.startsWith('data:')
-    ) {
+    // If already a valid signed URL with token
+    if (trimmed.includes('/storage/v1/object/sign/') && trimmed.includes('token=')) {
       return trimmed;
     }
 
-    const clean = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
-    let bucket = 'submission-audio';
-    let objectPath = clean;
-
-    if (clean.includes('/')) {
-      const parts = clean.split('/');
-      bucket = parts[0];
-      objectPath = parts.slice(1).join('/');
-    } else if (clean.startsWith('sub_')) {
-      bucket = 'submission-audio';
-      objectPath = clean;
-    } else {
-      bucket = 'recitation-audio';
-      objectPath = clean;
+    // Parse bucket and object path
+    const parsed = this.parseStoragePath(trimmed);
+    if (!parsed || !parsed.bucket || !parsed.path) {
+      return null;
     }
 
-    if (!bucket || !objectPath) return null;
+    const { bucket, path: objectPath } = parsed;
 
     const cacheKey = `${bucket}/${objectPath}`;
     const cached = this.signedUrlCache.get(cacheKey);
@@ -102,7 +180,9 @@ export class SupabaseService {
         'Content-Type': 'application/json'
       };
 
-      const res = await fetch(`${SUPABASE_CONFIG.storageBaseUrl}/object/sign/${bucket}/${objectPath}`, {
+      // 1. Try single-object sign endpoint
+      const signEndpoint = `${SUPABASE_CONFIG.storageBaseUrl}/object/sign/${bucket}/${objectPath}`;
+      const res = await fetch(signEndpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({ expiresIn })
@@ -123,8 +203,40 @@ export class SupabaseService {
           return fullSignedUrl;
         }
       }
-    } catch (e) {
-      console.warn('Supabase createSignedStorageUrl error:', e);
+
+      // 2. If single-object sign returns non-ok, try batch sign endpoint with paths array
+      const batchEndpoint = `${SUPABASE_CONFIG.storageBaseUrl}/object/sign/${bucket}`;
+      const batchRes = await fetch(batchEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ paths: [objectPath], expiresIn })
+      });
+
+      if (batchRes.ok) {
+        const batchData = await batchRes.json();
+        if (Array.isArray(batchData) && batchData[0]?.signedURL) {
+          const signedPath = batchData[0].signedURL;
+          const fullSignedUrl = signedPath.startsWith('http')
+            ? signedPath
+            : `${SUPABASE_CONFIG.storageBaseUrl}${signedPath.startsWith('/') ? '' : '/'}${signedPath}`;
+
+          this.signedUrlCache.set(cacheKey, {
+            url: fullSignedUrl,
+            expiresAt: now + expiresIn * 1000
+          });
+          return fullSignedUrl;
+        }
+      }
+
+      const errData = await res.json().catch(() => null);
+      console.warn('Supabase createSignedStorageUrl failed:', {
+        status: res.status,
+        bucket,
+        objectPath,
+        error: errData?.error || errData?.message
+      });
+    } catch (e: any) {
+      console.warn('Supabase createSignedStorageUrl network exception:', e);
     }
 
     return null;
@@ -146,6 +258,7 @@ export class SupabaseService {
    */
   static async getPlayableAudioUrl(
     record?: {
+      id?: string;
       audio_storage_path?: string | null;
       audioStoragePath?: string | null;
       external_audio_url?: string | null;
@@ -158,57 +271,83 @@ export class SupabaseService {
   ): Promise<string> {
     if (!record) return '';
 
-    // 1. Highest Priority: Storage Path / File
-    const storagePath = record.audio_storage_path || record.audioStoragePath;
+    const rawStoragePath = record.audio_storage_path || record.audioStoragePath || '';
+    const rawAudioUrl = record.audio_url || record.audioUrl || '';
+    const rawExternalUrl = record.external_audio_url || record.externalAudioUrl || '';
+
+    // Determine target storage path
+    let targetPath = rawStoragePath;
+    if (!targetPath && (rawAudioUrl.includes('/storage/v1/object/') || rawAudioUrl.includes('sub_') || rawAudioUrl.includes('submission-audio'))) {
+      targetPath = rawAudioUrl;
+    }
+
     if (
-      storagePath &&
-      typeof storagePath === 'string' &&
-      storagePath.trim() &&
-      storagePath.trim() !== 'recitation-audio/sample.mp3' &&
-      storagePath.trim() !== 'recitation-audio/default.mp3'
+      targetPath &&
+      typeof targetPath === 'string' &&
+      targetPath.trim() &&
+      targetPath.trim() !== 'recitation-audio/sample.mp3' &&
+      targetPath.trim() !== 'recitation-audio/default.mp3'
     ) {
-      const trimmed = storagePath.trim();
+      const trimmed = targetPath.trim();
+      const parsed = this.parseStoragePath(trimmed);
 
-      // If already a full URL or blob
-      if (
-        trimmed.startsWith('http://') ||
-        trimmed.startsWith('https://') ||
-        trimmed.startsWith('blob:') ||
-        trimmed.startsWith('data:')
-      ) {
-        if (isValidAudioUrl(trimmed)) {
-          return trimmed;
+      if (parsed) {
+        const isPrivate = parsed.bucket === 'submission-audio' || parsed.bucket === 'submission-images';
+
+        // Create Signed URL
+        const signedUrl = await this.createSignedStorageUrl(trimmed, 7200, authToken);
+
+        // Required SUBMISSION AUDIO DEBUG log
+        console.log('=== SUBMISSION AUDIO DEBUG ===', {
+          submissionId: record.id || 'N/A',
+          raw_audio_storage_path: rawStoragePath,
+          raw_audio_url: rawAudioUrl,
+          normalized_bucket: parsed.bucket,
+          normalized_path: parsed.path,
+          signedUrlResult: signedUrl ? (signedUrl.substring(0, 65) + '...[token hidden]') : null,
+          hasSignedUrl: !!signedUrl
+        });
+
+        if (signedUrl && isValidAudioUrl(signedUrl)) {
+          return signedUrl;
         }
-      }
 
-      // Try signed URL first for submission-audio or any private storage path
-      const signedUrl = await this.createSignedStorageUrl(trimmed, 7200, authToken);
-      if (signedUrl && isValidAudioUrl(signedUrl)) {
-        return signedUrl;
-      }
+        if (isPrivate) {
+          // Strictly private: NEVER fallback to a public URL
+          return '';
+        }
 
-      // Fallback to public storage URL
-      const publicUrl = this.getStoragePublicUrl(trimmed);
-      if (publicUrl && isValidAudioUrl(publicUrl)) {
-        return publicUrl;
+        // Public buckets (e.g. recitation-audio)
+        const publicUrl = this.getStoragePublicUrl(`${parsed.bucket}/${parsed.path}`);
+        if (publicUrl && isValidAudioUrl(publicUrl)) {
+          return publicUrl;
+        }
       }
     }
 
     // 2. Second Priority: External Audio URL
-    const external = record.external_audio_url || record.externalAudioUrl;
-    if (external && typeof external === 'string' && external.trim()) {
-      const directExt = transformGoogleDriveAudioUrl(external.trim());
-      if (isValidAudioUrl(directExt)) {
-        return directExt;
+    if (rawExternalUrl && typeof rawExternalUrl === 'string' && rawExternalUrl.trim()) {
+      const trimmedExt = rawExternalUrl.trim();
+      if (!trimmedExt.includes('/storage/v1/object/public/submission-audio/') && !trimmedExt.includes('/storage/v1/object/submission-audio/')) {
+        const directExt = transformGoogleDriveAudioUrl(trimmedExt);
+        if (isValidAudioUrl(directExt)) {
+          return directExt;
+        }
       }
     }
 
-    // 3. Third Priority: Direct audio_url
-    const direct = record.audio_url || record.audioUrl;
-    if (direct && typeof direct === 'string' && direct.trim()) {
-      const directExt = transformGoogleDriveAudioUrl(direct.trim());
-      if (isValidAudioUrl(directExt)) {
-        return directExt;
+    // 3. Third Priority: Direct audio_url (only if valid external stream, not broken storage object URL)
+    if (rawAudioUrl && typeof rawAudioUrl === 'string' && rawAudioUrl.trim()) {
+      const trimmedDirect = rawAudioUrl.trim();
+      if (
+        !trimmedDirect.includes('/storage/v1/object/public/submission-audio/') &&
+        !trimmedDirect.includes('/storage/v1/object/submission-audio/') &&
+        !trimmedDirect.includes('sub_')
+      ) {
+        const directExt = transformGoogleDriveAudioUrl(trimmedDirect);
+        if (isValidAudioUrl(directExt)) {
+          return directExt;
+        }
       }
     }
 
@@ -245,17 +384,29 @@ export class SupabaseService {
    */
   static async uploadImage(file: Blob | File, bucket: string = 'profile-images'): Promise<{ storagePath: string; publicUrl: string } | null> {
     try {
-      const ext = (file as File).name?.split('.').pop() || 'jpg';
-      const cleanExt = ext.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'jpg';
+      const rawExt = (file as File).name?.split('.').pop() || 'jpg';
+      const cleanExt = rawExt.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'jpg';
       const uniqueName = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
       const storagePath = `${bucket}/${uniqueName}`;
+
+      const rawType = (file.type || '').toLowerCase();
+      let mimeType = 'image/jpeg';
+      if (rawType.includes('png') || cleanExt === 'png') {
+        mimeType = 'image/png';
+      } else if (rawType.includes('webp') || cleanExt === 'webp') {
+        mimeType = 'image/webp';
+      } else if (rawType.includes('gif') || cleanExt === 'gif') {
+        mimeType = 'image/gif';
+      } else {
+        mimeType = 'image/jpeg';
+      }
 
       const res = await fetch(`${SUPABASE_CONFIG.storageBaseUrl}/object/${bucket}/${uniqueName}`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
           'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
-          'Content-Type': file.type || 'image/jpeg'
+          'Content-Type': mimeType
         },
         body: file
       });
@@ -281,25 +432,32 @@ export class SupabaseService {
    */
   static async uploadSubmissionAudio(file: Blob | File, customName?: string): Promise<{ storagePath: string; publicUrl: string } | null> {
     try {
-      const ext = customName ? customName.split('.').pop() || 'mp3' : (file as File).name?.split('.').pop() || 'mp3';
-      const cleanExt = ext.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'mp3';
+      const rawExt = customName ? customName.split('.').pop() || 'mp3' : (file as File).name?.split('.').pop() || 'mp3';
+      const cleanExt = rawExt.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'mp3';
       const uniqueName = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${cleanExt}`;
       const bucket = 'submission-audio';
       const storagePath = `${bucket}/${uniqueName}`;
 
-      let mimeType = file.type;
-      if (!mimeType || mimeType === 'application/octet-stream') {
-        const mimeMap: Record<string, string> = {
-          mp3: 'audio/mpeg',
-          m4a: 'audio/mp4',
-          wav: 'audio/wav',
-          ogg: 'audio/ogg',
-          aac: 'audio/aac',
-          webm: 'audio/webm',
-          flac: 'audio/flac',
-          opus: 'audio/opus'
-        };
-        mimeType = mimeMap[cleanExt] || 'audio/mpeg';
+      const rawType = (file.type || '').toLowerCase();
+      let mimeType = 'audio/mpeg';
+
+      // Explicitly map all browser/mobile audio types to Supabase bucket allowed MIME types
+      if (rawType.includes('mpeg') || rawType.includes('mp3') || cleanExt === 'mp3') {
+        mimeType = 'audio/mpeg';
+      } else if (rawType.includes('m4a') || rawType.includes('mp4') || rawType.includes('aac') || cleanExt === 'm4a' || cleanExt === 'aac') {
+        mimeType = 'audio/m4a';
+      } else if (rawType.includes('wav') || cleanExt === 'wav') {
+        mimeType = 'audio/wav';
+      } else if (rawType.includes('ogg') || cleanExt === 'ogg') {
+        mimeType = 'audio/ogg';
+      } else if (rawType.includes('webm') || cleanExt === 'webm') {
+        mimeType = 'audio/webm';
+      } else if (rawType.includes('flac') || cleanExt === 'flac') {
+        mimeType = 'audio/flac';
+      } else if (rawType.includes('opus') || cleanExt === 'opus') {
+        mimeType = 'audio/opus';
+      } else {
+        mimeType = 'audio/mpeg';
       }
 
       const res = await fetch(`${SUPABASE_CONFIG.storageBaseUrl}/object/${bucket}/${uniqueName}`, {
@@ -320,7 +478,7 @@ export class SupabaseService {
 
       return {
         storagePath,
-        publicUrl: this.getStoragePublicUrl(storagePath, bucket)
+        publicUrl: '' // submission-audio is private; signed URL must be generated dynamically for review
       };
     } catch (e) {
       console.warn('Supabase uploadSubmissionAudio error:', e);

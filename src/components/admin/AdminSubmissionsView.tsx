@@ -3,6 +3,7 @@ import { adminService } from '../../services/AdminService';
 import { SupabaseService } from '../../services/SupabaseService';
 import { userService } from '../../services/UserService';
 import { RecitationSubmission, SubmissionStatus } from '../../types';
+import { isValidAudioUrl } from '../../utils/mediaUtils';
 import {
   FileCheck,
   Clock,
@@ -446,8 +447,16 @@ export function AdminSubmissionsView() {
             const isPlayingThis = playingAudioId === sub.id;
             const isLoadingThis = loadingAudioId === sub.id;
             const hasErrorThis = audioErrorId === sub.id;
-            const isStorageUpload = !!(sub.audioStoragePath || (sub.audioUrl && sub.audioUrl.includes('/storage/v1/object/')));
-            const isExternalUrl = !!(sub.externalAudioUrl || (sub.audioUrl && !sub.audioUrl.includes('/storage/v1/object/')));
+            const isStorageUpload = !!(
+              sub.audioStoragePath ||
+              (sub as any).audio_storage_path ||
+              (sub.audioUrl && (sub.audioUrl.includes('sub_') || sub.audioUrl.includes('submission-audio') || sub.audioUrl.includes('/storage/v1/object/'))) ||
+              (sub.audioFileName && (sub.audioFileName.endsWith('.mp3') || sub.audioFileName.endsWith('.m4a') || sub.audioFileName.endsWith('.wav')))
+            );
+            const isExternalUrl = !!(
+              sub.externalAudioUrl ||
+              (sub.audioUrl && isValidAudioUrl(sub.audioUrl) && !sub.audioUrl.includes('submission-audio'))
+            );
             const hasAnyAudioSource = isStorageUpload || isExternalUrl;
 
             return (

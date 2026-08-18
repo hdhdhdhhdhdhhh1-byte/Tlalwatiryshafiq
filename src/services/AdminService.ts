@@ -620,6 +620,7 @@ class AdminServiceImpl {
       description: r.description || '',
       audioFileName: r.audio_storage_path?.split('/').pop() || 'recording.mp3',
       audioDuration: 0,
+      audioStoragePath: r.audio_storage_path || undefined,
       audioUrl: SupabaseService.resolveAudioUrl(r),
       externalAudioUrl: r.external_audio_url,
       externalImageUrl: r.profile_image_path,
@@ -2092,6 +2093,10 @@ class AdminServiceImpl {
 
     if (!res.ok) {
       throw new Error(`Failed to upload file to storage bucket "${bucket}" (HTTP ${res.status})`);
+    }
+
+    if (bucket === 'submission-audio' || bucket === 'submission-images') {
+      return `${bucket}/${path}`;
     }
 
     return `${SUPABASE_CONFIG.storageBaseUrl}/object/public/${bucket}/${path}`;
