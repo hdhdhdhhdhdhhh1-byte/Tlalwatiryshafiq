@@ -813,7 +813,7 @@ fun HonorCard(honor: ReciterHonor) {
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = honor.reciterName,
+                text = honor.reward.title,
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
@@ -823,7 +823,7 @@ fun HonorCard(honor: ReciterHonor) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = honor.honorTitle,
+                text = honor.reward.description,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = PrimaryBlue,
@@ -831,10 +831,11 @@ fun HonorCard(honor: ReciterHonor) {
                 ),
                 textAlign = TextAlign.Center
             )
-            if (honor.notes.isNotBlank()) {
+            val citation = honor.citationNote ?: ""
+            if (citation.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = honor.notes,
+                    text = citation,
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = TextSecondary,
                         fontSize = 11.sp,

@@ -34,10 +34,18 @@ class SupabaseRewardRepository : IRewardRepository {
     }
 
     override suspend fun getHonorsByReciter(reciterId: String): Result<List<ReciterHonor>> {
-        val queryParams = mapOf(
-            "select" to "*,reward_definitions(*)",
-            "reciter_id" to "eq.$reciterId"
-        )
+        val queryParams = if (reciterId.isNotBlank()) {
+            mapOf(
+                "select" to "*,reward_definitions(*)",
+                "reciter_id" to "eq.$reciterId",
+                "order" to "awarded_at.desc"
+            )
+        } else {
+            mapOf(
+                "select" to "*,reward_definitions(*)",
+                "order" to "awarded_at.desc"
+            )
+        }
         val response = SupabaseHttpClient.get(SupabaseContracts.TABLE_RECITER_HONORS, queryParams)
         return response.mapCatching { jsonStr ->
             val jsonArray = JSONArray(jsonStr)
@@ -52,10 +60,14 @@ class SupabaseRewardRepository : IRewardRepository {
                 }
                 list.add(SupabaseDtoMappers.mapJsonToHonor(obj, reward))
             }
-            _honorsCache[reciterId] = list
-            if (list.isNotEmpty()) list else MockData.RECITER_HONORS.filter { it.reciterId == reciterId }
+            if (reciterId.isNotBlank()) {
+                _honorsCache[reciterId] = list
+            }
+            if (list.isNotEmpty()) list else {
+                if (reciterId.isNotBlank()) MockData.RECITER_HONORS.filter { it.reciterId == reciterId } else MockData.RECITER_HONORS
+            }
         }.recoverCatching {
-            MockData.RECITER_HONORS.filter { it.reciterId == reciterId }
+            if (reciterId.isNotBlank()) MockData.RECITER_HONORS.filter { it.reciterId == reciterId } else MockData.RECITER_HONORS
         }
     }
 

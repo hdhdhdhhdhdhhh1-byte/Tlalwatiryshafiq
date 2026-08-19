@@ -52,9 +52,10 @@ class HomeViewModel(
                 val featuredResult = reciterRepository.getFeaturedReciters()
                 val topRecitationsResult = statisticsRepository.getMostListenedRecitations(6)
                 val newestRecitationsResult = statisticsRepository.getNewestRecitations(6)
-                val announcements = announcementRepository?.getActiveAnnouncements()?.getOrDefault(emptyList()) ?: emptyList()
+                val announcements = announcementRepository?.getPublishedAnnouncements()?.getOrDefault(emptyList()) ?: emptyList()
                 val competitions = competitionRepository?.getActiveCompetitions()?.getOrDefault(emptyList()) ?: emptyList()
-                val honors = rewardRepository?.getHonors()?.getOrDefault(emptyList()) ?: emptyList()
+                val honorsResult = rewardRepository?.getHonorsByReciter("")
+                val honors = honorsResult?.getOrDefault(emptyList()) ?: emptyList()
 
                 val featured = featuredResult.getOrDefault(emptyList())
                 val topRecitations = topRecitationsResult.getOrDefault(emptyList())

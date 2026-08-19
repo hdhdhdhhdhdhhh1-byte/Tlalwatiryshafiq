@@ -19,7 +19,11 @@ class MockRewardRepository : IRewardRepository {
     }
 
     override suspend fun getHonorsByReciter(reciterId: String): Result<List<ReciterHonor>> {
-        val honors = _honorsFlow.value.filter { it.reciterId == reciterId }
+        val honors = if (reciterId.isNotBlank()) {
+            _honorsFlow.value.filter { it.reciterId == reciterId }
+        } else {
+            _honorsFlow.value
+        }
         return Result.success(honors)
     }
 
